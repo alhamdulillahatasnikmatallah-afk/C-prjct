@@ -16,7 +16,6 @@ jobs:
       - name: Extract source
         run: |
           unzip -o cend_dolphin_fixed.zip
-          ls -la
           ls -la cend_dolphin
 
       - name: Setup Java
@@ -32,11 +31,8 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Accept Android licenses
+        run: yes | flutter doctor --android-licenses || true
 
       - name: Flutter doctor
         run: flutter doctor -v 2>&1 | tee doctor.log || true
@@ -46,7 +42,6 @@ jobs:
         run: |
           flutter create --platforms=android . 2>&1 | tee create.log
           rm -rf test
-          ls -la android/app || true
 
       - name: Patch Android
         working-directory: cend_dolphin
@@ -69,12 +64,9 @@ jobs:
         run: |
           mkdir -p error_dump
           cp doctor.log error_dump/ 2>/dev/null || true
-          cp cend_dolphin/create.log error_dump/ 2>/dev/null || true
-          cp cend_dolphin/patch.log error_dump/ 2>/dev/null || true
-          cp cend_dolphin/pubget.log error_dump/ 2>/dev/null || true
-          cp cend_dolphin/build.log error_dump/ 2>/dev/null || true
-          echo "=== LAST 150 LINES OF BUILD LOG ===" > error_dump/summary.txt
-          tail -150 cend_dolphin/build.log >> error_dump/summary.txt 2>/dev/null || echo "no build log" >> error_dump/summary.txt
+          cp cend_dolphin/*.log error_dump/ 2>/dev/null || true
+          echo "=== LAST 200 LINES BUILD ===" > error_dump/summary.txt
+          tail -200 cend_dolphin/build.log >> error_dump/summary.txt 2>/dev/null || echo "NO BUILD LOG" >> error_dump/summary.txt
           ls -la error_dump/
           cat error_dump/summary.txt
 
@@ -86,7 +78,7 @@ jobs:
           path: error_dump/
           retention-days: 5
 
-      - name: Fail job if build failed
+      - name: Fail if build failed
         if: steps.build.outcome == 'failure'
         run: exit 1
 
