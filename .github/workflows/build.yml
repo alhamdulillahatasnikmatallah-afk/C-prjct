@@ -1,0 +1,99 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract source
+        run: |
+          unzip -o cend_dolphin_fixed.zip
+          ls -la
+          ls -la cend_dolphin
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Flutter doctor
+        run: flutter doctor -v 2>&1 | tee doctor.log || true
+
+      - name: Create Android platform
+        working-directory: cend_dolphin
+        run: |
+          flutter create --platforms=android . 2>&1 | tee create.log
+          rm -rf test
+          ls -la android/app || true
+
+      - name: Patch Android
+        working-directory: cend_dolphin
+        run: python3 tool/patch_android.py 2>&1 | tee patch.log
+
+      - name: Get dependencies
+        working-directory: cend_dolphin
+        run: flutter pub get 2>&1 | tee pubget.log
+
+      - name: Build Debug APK
+        id: build
+        working-directory: cend_dolphin
+        continue-on-error: true
+        run: |
+          flutter build apk --debug --verbose 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Collect all logs
+        if: always()
+        run: |
+          mkdir -p error_dump
+          cp doctor.log error_dump/ 2>/dev/null || true
+          cp cend_dolphin/create.log error_dump/ 2>/dev/null || true
+          cp cend_dolphin/patch.log error_dump/ 2>/dev/null || true
+          cp cend_dolphin/pubget.log error_dump/ 2>/dev/null || true
+          cp cend_dolphin/build.log error_dump/ 2>/dev/null || true
+          echo "=== LAST 150 LINES OF BUILD LOG ===" > error_dump/summary.txt
+          tail -150 cend_dolphin/build.log >> error_dump/summary.txt 2>/dev/null || echo "no build log" >> error_dump/summary.txt
+          ls -la error_dump/
+          cat error_dump/summary.txt
+
+      - name: Upload FULL error dump
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FULL-ERROR-DUMP
+          path: error_dump/
+          retention-days: 5
+
+      - name: Fail job if build failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
+
+      - name: Upload APK
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cend-dolphin-debug-apk
+          path: cend_dolphin/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
